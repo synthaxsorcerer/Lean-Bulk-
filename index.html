@@ -56,13 +56,13 @@
   }
   .nav button {
     flex: 1;
-    padding: 10px 8px;
+    padding: 10px 4px;
     background: none;
     border: none;
     border-radius: 8px;
     color: var(--subtext);
     font-family: var(--sans);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
@@ -459,6 +459,44 @@
   button.ex-check { background: transparent; color: inherit; padding: 0; font-family: inherit; }
   button.nutri-row { width: 100%; cursor: pointer; }
   .btn-save:disabled { opacity: 0.5; }
+
+  /* PERFS (poids × reps) */
+  .ex-main { flex: 1; min-width: 0; }
+  .ex-main .ex-spec { display: block; margin-top: 2px; white-space: normal; }
+  .ex-goal { color: var(--accent); }
+  .ex-perf { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .ex-perf input {
+    width: 54px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font-family: var(--mono); font-size: 16px; padding: 6px 4px; text-align: center; outline: none;
+  }
+  .ex-perf input:focus { border-color: var(--accent); }
+  .ex-perf input.r { width: 40px; }
+  .ex-perf span { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .perf-line { font-family: var(--mono); font-size: 11px; color: var(--accent2); margin-top: 3px; line-height: 1.5; }
+
+  /* OBJECTIFS */
+  .goal { padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .goal:last-child { border-bottom: none; }
+  .goal-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .goal-name { font-size: 13px; font-weight: 600; }
+  .goal-vals { font-family: var(--mono); font-size: 11px; color: var(--subtext); white-space: nowrap; }
+  .goal-vals b { color: var(--text); }
+  .goal-bar { position: relative; height: 8px; background: var(--border); border-radius: 4px; margin: 8px 0 6px; overflow: hidden; }
+  .goal-bar .fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.5s; }
+  .goal-bar .fill.max { background: var(--accent2); }
+  .goal-bar .mark { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--bg); }
+  .goal-foot { display: flex; justify-content: space-between; font-size: 11px; color: var(--subtext); }
+  .pill { font-size: 10px; font-weight: 700; border-radius: 20px; padding: 2px 8px; }
+  .pill.ok { background: var(--accent-dim); color: var(--accent); }
+  .pill.max { background: rgba(79,209,197,0.15); color: var(--accent2); }
+  .pill.late { background: rgba(255,92,92,0.12); color: var(--red); }
+  .pill.on { background: var(--surface); color: var(--subtext); border: 1px solid var(--border); }
+  .goal-edit { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+  .goal-edit label { font-size: 10px; color: var(--subtext); display: block; margin-bottom: 3px; }
+  .goal-edit input {
+    width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text);
+    font-family: var(--mono); font-size: 16px; padding: 6px; outline: none;
+  }
 </style>
 </head>
 <body>
@@ -471,6 +509,7 @@
   <button class="active" data-page="seance">Séance</button>
   <button data-page="nutrition">Nutrition</button>
   <button data-page="vacuum">Vacuum</button>
+  <button data-page="objectifs">Objectifs</button>
   <button data-page="suivi">Suivi</button>
 </nav>
 
@@ -544,6 +583,29 @@
   <div class="card">
     <div class="card-title">📅 Vacuum – 30 derniers jours</div>
     <div class="streak-row" id="vac-streak"></div>
+  </div>
+</div>
+
+<!-- ============ OBJECTIFS ============ -->
+<div class="page" id="page-objectifs">
+  <div class="card">
+    <div class="card-title">🎯 Cycle en cours</div>
+    <div class="hint" id="goal-cycle" style="margin-bottom:12px"></div>
+    <div class="stat-strip" style="margin-bottom:0">
+      <div class="stat-box"><div class="val" id="gs-p1">0</div><div class="lbl">Palier 3 mois</div></div>
+      <div class="stat-box"><div class="val" id="gs-p2">0</div><div class="lbl">Palier 6 mois</div></div>
+      <div class="stat-box"><div class="val" id="gs-pr">0</div><div class="lbl">PR ce cycle</div></div>
+    </div>
+  </div>
+  <div id="goal-groups"></div>
+  <div class="card">
+    <div class="card-title">⚙️ Réglages</div>
+    <div class="hint">Les charges sont visées pour ~8 reps propres (sauf indication). La valeur « actuelle » est ta meilleure charge saisie à 6 reps ou plus, ou la base de départ.</div>
+    <div class="btn-row">
+      <button class="btn-save" id="goal-edit-btn">✏️ Modifier</button>
+      <button class="btn-save btn-ghost" id="goal-cycle-btn">🔄 Nouveau cycle</button>
+    </div>
+    <button class="btn-save btn-ghost" id="goal-reset-btn">↺ Objectifs par défaut</button>
   </div>
 </div>
 
@@ -710,6 +772,73 @@ const PROGRAM = {
 };
 const WEEK_GOAL = 4;
 
+// ================= OBJECTIFS (source unique) =================
+// n : noms d'exos du PROGRAM rattachés · u : 'kg' (charge à ~8 reps) ou 'reps' · base : point de départ (historique oct. 2026)
+const G = (id, grp, label, n, base, g3, g6, u = 'kg', unit = 'kg') => ({ id, grp, label, n, base, g3, g6, u, unit });
+const GOALS_DEFAULT = [
+  G('couche', 'Push', 'Développé couché barre', ['Développé couché barre'], 60, 70, 80),
+  G('couche-h', 'Push', 'Développé couché haltères', ['Développé couché haltères'], 22, 26, 30, 'kg', 'kg/main'),
+  G('incline', 'Push', 'Développé incliné haltères', ['Développé incliné haltères'], 20, 24, 26, 'kg', 'kg/main'),
+  G('mili', 'Push', 'Développé militaire haltères', ['Développé militaire haltères'], 18, 20, 23, 'kg', 'kg/main'),
+  G('elev', 'Push', 'Élévations latérales', ['Élévations latérales'], 9, 10, 12, 'kg', 'kg/main'),
+  G('dips', 'Push', 'Dips lestés', ['Dips lestés'], 10, 15, 22, 'kg', 'kg lest'),
+  G('pushdown', 'Push', 'Push-down câble', ['Push-down câble'], 18, 22, 25),
+  G('ecarte', 'Push', 'Écarté poulie basse', ['Écarté poulie basse'], 6.5, 8, 10),
+  G('tractions', 'Pull', 'Tractions lestées', ['Tractions lestées / poulie haute', 'Tractions lestées'], 5, 10, 15, 'kg', 'kg lest'),
+  G('rowing', 'Pull', 'Rowing barre', ['Rowing barre'], 70, 75, 82),
+  G('tirage', 'Pull', 'Tirage horizontal câble', ['Tirage horizontal câble'], 45, 55, 62),
+  G('curl', 'Pull', 'Curl barre', ['Curl barre'], 25, 30, 33),
+  G('pullover', 'Pull', 'Pullover câble', ['Pullover câble'], 22, 25, 30),
+  G('marteau', 'Pull', 'Curl marteau haltères', ['Curl marteau haltères'], 14, 16, 18, 'kg', 'kg/main'),
+  G('squat', 'Legs / Abdos', 'Squat barre', ['Squat barre'], 60, 80, 97.5),
+  G('presse', 'Legs / Abdos', 'Presse à cuisses', ['Presse à cuisses'], 20, 40, 60, 'kg', 'kg/côté'),
+  G('fentes', 'Legs / Abdos', 'Fentes marchées haltères', ['Fentes marchées haltères'], 20, 24, 28),
+  G('mollets', 'Legs / Abdos', 'Mollets debout', ['Mollets debout'], 15, 20, 25),
+  G('crunch', 'Legs / Abdos', 'Crunch câble', ['Crunch câble'], 27, 32, 36),
+  G('releves', 'Legs / Abdos', 'Relevés de jambes suspendus', ['Relevés de jambes suspendus'], 6, 10, 15, 'reps', 'reps'),
+  G('pallof', 'Legs / Abdos', 'Pallof press câble', ['Pallof press câble'], 9, 12, 14),
+];
+const GOAL_START_DEFAULT = '2026-10-17';
+const MIN_REPS = 6;   // une charge ne compte pour l'objectif qu'à partir de 6 reps
+let goalCfg = load('lb_goals', {});          // { start, o: { id: { base, g3, g6 } } }
+let goalEdit = false;
+const goalStart = () => goalCfg.start || GOAL_START_DEFAULT;
+const GOALS = () => GOALS_DEFAULT.map(g => Object.assign({}, g, (goalCfg.o || {})[g.id]));
+const goalOf = name => GOALS().find(g => g.n.includes(name));
+const addMonths = (s, m) => { const d = parseYmd(s); d.setMonth(d.getMonth() + m); return ymd(d); };
+const num = v => { const x = parseFloat(String(v ?? '').replace(',', '.')); return isFinite(x) ? x : null; };
+const fmtN = x => x === null || x === undefined ? '–' : String(Math.round(x * 100) / 100).replace('.', ',');
+const e1rm = (kg, r) => kg && r ? kg * (1 + r / 30) : null;   // Epley
+
+// Valeur retenue d'une perf pour un objectif (charge si ≥ MIN_REPS, ou reps)
+function perfValue(g, p) {
+  if (!p) return null;
+  if (g.u === 'reps') return num(p.r);
+  const kg = num(p.kg), r = num(p.r);
+  if (kg === null) return null;
+  return r === null || r >= MIN_REPS ? kg : null;
+}
+// Meilleure valeur saisie pour un objectif (option : exclure une date, ne garder que depuis une date)
+function bestLogged(g, { exclude, since } = {}) {
+  let best = null, at = null;
+  state.seances.forEach(s => {
+    if (!s.perf || s.date === exclude || (since && s.date < since)) return;
+    g.n.forEach(n => { const v = perfValue(g, s.perf[n]); if (v !== null && (best === null || v > best)) { best = v; at = s; } });
+  });
+  return { best, at };
+}
+const goalCurrent = g => { const b = bestLogged(g, { since: goalStart() }).best; return b === null ? g.base : Math.max(b, g.base); };
+// Prochain palier à afficher pendant la séance
+function nextTarget(g) {
+  const c = goalCurrent(g);
+  return c < g.g3 ? g.g3 : c < g.g6 ? g.g6 : null;
+}
+// Dernière perf saisie pour un exo (pour pré-remplir les placeholders)
+function lastPerf(name, before) {
+  const s = state.seances.filter(x => x.perf && x.perf[name] && x.date < before).sort((a, b) => b.date.localeCompare(a.date))[0];
+  return s ? s.perf[name] : null;
+}
+
 // ================= DATES / SEMAINE =================
 let weekOffset = 0;
 let openKey = null;
@@ -756,6 +885,9 @@ function lastSession(p, before) {
     .sort((a, b) => b.date.localeCompare(a.date))[0];
 }
 
+// Saisie poids × reps : mode normal, hors skills, cardio et gainage
+const hasPerf = (b, e) => mode === 'normal' && !b.skill && !/^(Marche|Gainage)/.test(e.n);
+
 function renderDays() {
   const dates = weekDates(weekOffset);
   const today = ymd();
@@ -786,14 +918,25 @@ function dayBody(p, date, monday) {
     h += '<div class="seg small">' + p.options.map(o =>
       `<button data-opt="${o.id}" data-day="${p.key}" class="${(d.opt || 'A') === o.id ? 'active' : ''}">${o.name}</button>`).join('') + '</div>';
   }
+  const w = d.w || (ses && ses.perf) || {};
   exercisesOf(p, d, monday).forEach(b => {
     const rows = b.ex.map((e, i) => {
       const id = b.id + '-' + e.n; const on = !!c[id];
+      const g = goalOf(e.n); const tgt = g ? nextTarget(g) : null;
+      const goalTxt = g ? (tgt === null ? ' · <span class="ex-goal">🏆 objectif atteint</span>' : ` · <span class="ex-goal">🎯 ${fmtN(tgt)} ${g.u === 'reps' ? 'reps' : 'kg'}</span>`) : '';
+      let perf = '';
+      if (hasPerf(b, e)) {
+        const v = w[e.n] || {}; const lp = lastPerf(e.n, date) || {};
+        perf = `<div class="ex-perf">
+          <input data-kg="${esc(e.n)}" data-day="${p.key}" inputmode="decimal" value="${esc(v.kg ?? '')}" placeholder="${esc(lp.kg ?? 'kg')}" aria-label="Charge ${esc(e.n)}"><span>×</span>
+          <input class="r" data-r="${esc(e.n)}" data-day="${p.key}" inputmode="numeric" value="${esc(v.r ?? '')}" placeholder="${esc(lp.r ?? 'r')}" aria-label="Reps ${esc(e.n)}"></div>`;
+      }
       return `<div class="ex-row"><button class="ex-check ${on ? 'checked' : ''}" data-ck="${esc(id)}" data-day="${p.key}" aria-pressed="${on}" aria-label="${esc(e.n)}">${on ? '✓' : ''}</button>
-        <div class="ex-name">${esc(e.n)}</div>${e.b ? `<span class="ss-badge">${e.b}</span>` : ''}<div class="ex-spec">${e.s}</div></div>`;
+        <div class="ex-main"><div class="ex-name">${esc(e.n)} ${e.b ? `<span class="ss-badge">${e.b}</span>` : ''}</div><div class="ex-spec">${e.s}${goalTxt}</div></div>${perf}</div>`;
     }).join('');
     h += b.skill ? `<div class="skill-box"><div class="block-title">${b.title}</div>${rows}</div>` : `<div class="block-title">${b.title}</div>${rows}`;
   });
+  if (mode === 'normal') h += '<div class="hint" style="margin:8px 0 0;font-size:11px">Saisis la charge de ta meilleure série × reps (le gris = la dernière fois). Lest pour tractions/dips.</div>';
   const note = d.note !== undefined ? d.note : (ses && ses.note) || '';
   h += `<textarea class="notes-area" rows="2" data-note="${p.key}" placeholder="${p.ph}">${esc(note)}</textarea>
     <button class="btn-save" data-save="${p.key}">${ses ? '🔁 Mettre à jour la séance' : '✅ Valider la séance'}</button></div>`;
@@ -826,7 +969,7 @@ function initialDraft(p, date) {
   if (!ses.c && ses.done === ses.total) {   // anciennes séances 100 % : tout coché
     exercisesOf(p, { opt }, weekDates(weekOffset)[0]).filter(b => !b.skill).forEach(b => b.ex.forEach(e => c[b.id + '-' + e.n] = 1));
   }
-  return { c, opt, note: ses.note || '' };
+  return { c, opt, note: ses.note || '', w: ses.perf ? JSON.parse(JSON.stringify(ses.perf)) : {} };
 }
 function draftOf(p) { const k = draftKey(p, dateOf(p)); return drafts[k] || (drafts[k] = initialDraft(p, dateOf(p))); }
 
@@ -847,8 +990,19 @@ $('days').addEventListener('click', e => {
   }
 });
 $('days').addEventListener('input', e => {
-  if (!e.target.dataset.note) return;
-  draftOf(findP(e.target.dataset.note)).note = e.target.value; saveDrafts();
+  const t = e.target;
+  if (t.dataset.note) { draftOf(findP(t.dataset.note)).note = t.value; saveDrafts(); return; }
+  const name = t.dataset.kg || t.dataset.r; if (!name) return;
+  const p = findP(t.dataset.day); const d = draftOf(p);
+  d.w = d.w || {}; const v = d.w[name] = d.w[name] || {};
+  v[t.dataset.kg ? 'kg' : 'r'] = t.value.trim();
+  if (!v.kg && !v.r) delete d.w[name];
+  // Une charge saisie coche l'exo automatiquement
+  if (t.value.trim()) {
+    const ck = t.closest('.ex-row').querySelector('.ex-check');
+    if (!d.c[ck.dataset.ck]) { d.c[ck.dataset.ck] = 1; ck.classList.add('checked'); ck.textContent = '✓'; ck.setAttribute('aria-pressed', true); }
+  }
+  saveDrafts();
 });
 
 function saveSession(p) {
@@ -861,12 +1015,33 @@ function saveSession(p) {
   const label = p.options ? p.options.find(o => o.id === (d.opt || 'A')).label : p.label;
   const prev = sessionOn(date);
   const note = d.note !== undefined ? d.note : (prev && prev.note) || '';
+  // Perfs : on ne garde que les exos affichés ce jour-là, valeurs numériques
+  const shown = new Set(exercisesOf(p, d, weekDates(weekOffset)[0]).flatMap(b => b.ex.map(e => e.n)));
+  const perf = {};
+  Object.entries(d.w || {}).forEach(([n, v]) => {
+    if (!shown.has(n)) return;
+    const kg = num(v.kg), r = num(v.r);
+    if (kg !== null || r !== null) perf[n] = { kg, r: r === null ? null : Math.round(r) };
+  });
+  // PR : meilleure valeur que tout l'historique (base de départ incluse)
+  const prs = [];
+  Object.entries(perf).forEach(([n, v]) => {
+    const g = goalOf(n); if (!g) return;
+    const val = perfValue(g, v); if (val === null) return;
+    const before = bestLogged(g, { exclude: date }).best;
+    const ref = Math.max(before === null ? -Infinity : before, g.base);
+    if (val > ref) prs.push(g.label + ' ' + fmtN(val) + (g.u === 'reps' ? ' reps' : ' kg'));
+  });
   state.seances = state.seances.filter(s => s.date !== date);
-  state.seances.push({ date, key: p.key, label, done, total: ids.length, c: checked, note, ts: Date.now() });
+  const rec = { date, key: p.key, label, done, total: ids.length, c: checked, note, ts: Date.now() };
+  if (Object.keys(perf).length) rec.perf = perf;
+  if (prs.length) rec.prs = prs;
+  state.seances.push(rec);
   save();
   delete drafts[draftKey(p, date)]; saveDrafts();
   openKey = null; renderSeance();
-  toast(done === ids.length ? '🔥 Séance 100 % complète !' : `💪 ${done}/${ids.length} exos – séance validée`);
+  if (prs.length) toast('🏆 PR ! ' + prs[0] + (prs.length > 1 ? ` (+${prs.length - 1})` : ''));
+  else toast(done === ids.length ? '🔥 Séance 100 % complète !' : `💪 ${done}/${ids.length} exos – séance validée`);
 }
 
 $('modeSeg').addEventListener('click', e => {
@@ -993,6 +1168,8 @@ function renderSuivi() {
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;font-size:13px">${esc(s.label)}</div>
         <div class="h-date">${fmt(s.date)}</div>
+        ${s.perf ? `<div class="perf-line">${Object.entries(s.perf).map(([n, v]) => esc(n) + ' ' + fmtN(v.kg) + (v.r ? '×' + v.r : '')).join(' · ')}</div>` : ''}
+        ${s.prs ? `<div class="perf-line" style="color:var(--accent)">🏆 ${s.prs.map(esc).join(' · ')}</div>` : ''}
         ${s.note ? `<div style="color:var(--subtext);font-size:11px;margin-top:2px">${esc(s.note)}</div>` : ''}
       </div>
       <div class="h-vals" style="padding-left:10px">${s.done}/${s.total}</div>
@@ -1026,10 +1203,78 @@ $('page-suivi').addEventListener('click', e => {
   if (m && confirm('Supprimer cette mesure ?')) { state.mesures = state.mesures.filter(x => String(x.ts) !== m.dataset.delMes); save(); renderSuivi(); renderStats(); }
 });
 
+// ================= OBJECTIFS : rendu =================
+function goalStatus(g, cur) {
+  if (cur >= g.g6) return ['max', '🏆 Objectif 6 mois'];
+  if (cur >= g.g3) return ['ok', '✅ Palier 3 mois'];
+  const days = (parseYmd(ymd()) - parseYmd(goalStart())) / 864e5;
+  const expected = g.base + (g.g6 - g.base) * Math.min(Math.max(days, 0) / 182, 1);
+  return cur >= expected - 1e-9 ? ['on', '👍 Dans les temps'] : ['late', '⏳ À pousser'];
+}
+
+function renderGoals() {
+  const st = goalStart(), p1 = addMonths(st, 3), p2 = addMonths(st, 6);
+  const f = s => parseYmd(s).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
+  const days = Math.max(0, Math.round((parseYmd(ymd()) - parseYmd(st)) / 864e5));
+  $('goal-cycle').innerHTML = `Départ ${f(st)} · jour ${days}<br>Palier 1 : <b style="color:var(--text)">${f(p1)}</b> · Palier 2 : <b style="color:var(--text)">${f(p2)}</b>`;
+  const list = GOALS();
+  let n1 = 0, n2 = 0;
+  const groups = {};
+  list.forEach(g => {
+    const cur = goalCurrent(g); if (cur >= g.g3) n1++; if (cur >= g.g6) n2++;
+    const span = g.g6 - g.base;
+    const pct = span > 0 ? Math.min(Math.max((cur - g.base) / span, 0), 1) * 100 : 100;
+    const mark = span > 0 ? Math.min(Math.max((g.g3 - g.base) / span, 0), 1) * 100 : 0;
+    const [cls, txt] = goalStatus(g, cur);
+    const { at } = bestLogged(g, { since: st });
+    const atTxt = at && at.perf ? (() => { const v = g.n.map(n => at.perf[n]).find(Boolean); const one = v && g.u === 'kg' ? e1rm(num(v.kg), num(v.r)) : null;
+      return `${fmtN(v.kg)}${v.r ? '×' + v.r : ''} le ${fmt(at.date)}${one ? ' · 1RM≈' + Math.round(one) : ''}`; })() : 'base de départ';
+    const edit = goalEdit ? `<div class="goal-edit">
+        <div><label>Base</label><input data-gid="${g.id}" data-gf="base" inputmode="decimal" value="${fmtN(g.base)}"></div>
+        <div><label>3 mois</label><input data-gid="${g.id}" data-gf="g3" inputmode="decimal" value="${fmtN(g.g3)}"></div>
+        <div><label>6 mois</label><input data-gid="${g.id}" data-gf="g6" inputmode="decimal" value="${fmtN(g.g6)}"></div></div>` : '';
+    (groups[g.grp] = groups[g.grp] || []).push(`<div class="goal">
+      <div class="goal-top"><div class="goal-name">${esc(g.label)}</div>
+        <div class="goal-vals"><b>${fmtN(cur)}</b> → ${fmtN(g.g3)} → ${fmtN(g.g6)} ${g.unit}</div></div>
+      <div class="goal-bar"><div class="fill ${cur >= g.g6 ? 'max' : ''}" style="width:${pct}%"></div><div class="mark" style="left:${mark}%"></div></div>
+      <div class="goal-foot"><span>${atTxt}</span><span class="pill ${cls}">${txt}</span></div>${edit}</div>`);
+  });
+  $('goal-groups').innerHTML = Object.entries(groups).map(([grp, rows]) =>
+    `<div class="card"><div class="card-title">${grp === 'Push' ? '🏋️' : grp === 'Pull' ? '🧗' : '🦵'} ${grp}</div>${rows.join('')}</div>`).join('');
+  $('gs-p1').textContent = n1 + '/' + list.length;
+  $('gs-p2').textContent = n2 + '/' + list.length;
+  $('gs-pr').textContent = state.seances.filter(s => s.prs && s.date >= st).reduce((a, s) => a + s.prs.length, 0);
+  $('goal-edit-btn').textContent = goalEdit ? '💾 Enregistrer' : '✏️ Modifier';
+}
+
+$('goal-edit-btn').addEventListener('click', () => {
+  if (goalEdit) {
+    const o = goalCfg.o || {}; let bad = false;
+    document.querySelectorAll('#goal-groups [data-gid]').forEach(i => {
+      const v = num(i.value); if (v === null) { bad = true; return; }
+      (o[i.dataset.gid] = o[i.dataset.gid] || {})[i.dataset.gf] = v;
+    });
+    if (bad) { toast('⚠️ Valeur invalide'); return; }
+    goalCfg.o = o; store('lb_goals', goalCfg); toast('🎯 Objectifs enregistrés');
+  }
+  goalEdit = !goalEdit; renderGoals();
+});
+$('goal-cycle-btn').addEventListener('click', () => {
+  if (!confirm('Nouveau cycle : la base de chaque exo devient ta valeur actuelle et le départ passe à aujourd\'hui. Pense ensuite à remonter les paliers 3 et 6 mois. Continuer ?')) return;
+  const o = goalCfg.o || {};
+  GOALS().forEach(g => { (o[g.id] = o[g.id] || {}).base = goalCurrent(g); });
+  goalCfg = { start: ymd(), o }; store('lb_goals', goalCfg); goalEdit = true; renderGoals();
+  toast('🔄 Nouveau cycle démarré');
+});
+$('goal-reset-btn').addEventListener('click', () => {
+  if (!confirm('Revenir aux objectifs par défaut (base oct. 2026) ? Tes perfs saisies sont conservées.')) return;
+  goalCfg = {}; localStorage.removeItem('lb_goals'); goalEdit = false; renderGoals(); toast('↺ Objectifs par défaut');
+});
+
 // ================= SAUVEGARDE =================
 const OWN_KEY = k => k === 'leanBulk' || k.startsWith('lb_');
 $('btn-export').addEventListener('click', () => {
-  const dump = { app: 'lean-bulk', version: 12, exported: new Date().toISOString(), data: {} };
+  const dump = { app: 'lean-bulk', version: 13, exported: new Date().toISOString(), data: {} };
   for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (OWN_KEY(k) && k !== 'lb_draft') dump.data[k] = localStorage.getItem(k); }
   const name = 'lean-bulk-' + ymd() + '.json';
   const blob = new Blob([JSON.stringify(dump)], { type: 'application/json' });
@@ -1073,7 +1318,7 @@ $('btn-reset').addEventListener('click', () => {
   if (!confirm('Effacer TOUTES les données (séances, mesures, nutrition, vacuum) ? Pense à exporter avant. Action irréversible.')) return;
   Object.keys(localStorage).filter(OWN_KEY).forEach(k => localStorage.removeItem(k));
   store('lb_seeded', '1'); store('lb_mode', mode);
-  state.seances = []; state.mesures = []; state.nutri = {}; drafts = {};
+  state.seances = []; state.mesures = []; state.nutri = {}; drafts = {}; goalCfg = {};
   renderAll(); toast('🗑️ Données effacées');
 });
 
@@ -1082,11 +1327,11 @@ document.querySelector('.nav').addEventListener('click', e => {
   const b = e.target.closest('[data-page]'); if (!b) return;
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + b.dataset.page));
   document.querySelectorAll('.nav button').forEach(x => x.classList.toggle('active', x === b));
-  ({ seance: renderSeance, nutrition: renderNutri, vacuum: renderVacuum, suivi: renderSuivi })[b.dataset.page]();
+  ({ seance: renderSeance, nutrition: renderNutri, vacuum: renderVacuum, objectifs: renderGoals, suivi: renderSuivi })[b.dataset.page]();
   window.scrollTo(0, 0);
 });
 
-function renderAll() { renderSeance(); renderNutri(); renderVacuum(); renderSuivi(); }
+function renderAll() { goalCfg = load('lb_goals', {}); renderSeance(); renderNutri(); renderVacuum(); renderGoals(); renderSuivi(); }
 
 // Brouillons de plus de 14 jours : purgés
 (function pruneDrafts() {
